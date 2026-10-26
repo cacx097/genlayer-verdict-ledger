@@ -1,0 +1,1 @@
+{"name":"genlayer-verdict-ledger-public-demo","private":true,"type":"module","scripts":{"test":"node --test tests/public.test.mjs"}}
