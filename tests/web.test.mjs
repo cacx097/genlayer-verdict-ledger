@@ -1,0 +1,40 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {mkdtemp,rm,readFile} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import path from "node:path";
+import {request as httpRequest} from "node:http";
+import {createLedgerServer} from "../web-server.mjs";
+const hash="0x"+"a".repeat(64);
+test("local UI, read-only protection, actual observation storage and exported report",async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),"verdict-ui-"));
+ const file=path.join(dir,"history.jsonl");
+ const stub=async hashes=>({schema:"genlayer-verdict-ledger/1",chain:"GenLayer Studionet",chainId:61999,endpoint:"https://studio.genlayer.com/api",method:"gen_getTransactionStatus",observedAt:new Date().toISOString(),results:hashes.map(hash=>({hash,status:"FINALIZED",error:null,knownStatus:true}))});
+ const app=createLedgerServer({file,port:0,auditFn:stub});
+ try {
+  const {url}=await app.listen();
+  const page=await fetch(url);
+  assert.equal(page.status,200);
+  assert.match(await page.text(),/거래 상태를 기록하고/);
+  const js=await fetch(url+"/app.js");
+  assert.equal(js.status,200);
+  assert.match(await js.text(),/api\/observe/);
+  const session=await (await fetch(url+"/api/session")).json();
+  const post=(value,extra={})=>fetch(url+"/api/observe",{method:"POST",headers:{"origin":url,"content-type":"application/json","x-session-token":session.token,...extra},body:JSON.stringify(value)});
+  assert.equal((await post({hashes:[hash]},{"x-session-token":"bad"})).status,403);
+  assert.equal((await post({hashes:["invalid"]})).status,400);
+  const real=await post({hashes:[hash]});
+  assert.equal(real.status,200);
+  const data=await real.json();
+  assert.equal(data.report.entries,1);
+  assert.equal(data.report.transactions[0].latestObservedStatus,"FINALIZED");
+  assert.match(await readFile(file,"utf8"),/FINALIZED/);
+  const exportRes=await fetch(url+"/api/export");
+  assert.equal(exportRes.status,200);
+  assert.match(exportRes.headers.get("content-disposition"),/attachment/);
+  assert.equal((await exportRes.json()).lastDigest,data.observation.digest);
+  assert.equal((await fetch(url+"/unexpected")).status,404);
+  const badHostStatus=await new Promise((resolve,reject)=>{const req=httpRequest(url,{headers:{Host:"evil.example"}},res=>{res.resume();resolve(res.statusCode);});req.on("error",reject);req.end();});
+  assert.equal(badHostStatus,403);
+ } finally {await app.close();await rm(dir,{recursive:true,force:true});}
+});
