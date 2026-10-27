@@ -67,3 +67,33 @@ try{
  history=raw?JSON.parse(raw):[];
  await verify(history);render();
 }catch(e){history=[];msg("저장된 기록에 오류가 있습니다. 내보내기/조회 전에 기록을 확인하세요: "+e.message,true);el("observe").disabled=true;el("export").disabled=true;}
+
+
+const DEPLOYED_CONTRACTS={
+ policy:{label:"PolicyGuard",address:"0x83a171bDC6d39B5E3ad21D5D0a4d28A5EB3964e2",readMethod:"get_policy_name"},
+ quorum:{label:"SourceQuorum",address:"0xbd6E0466a7bF7e58c2384DF0096A24E9b6CEAb8a",readMethod:"get_claim"}
+};
+async function contractRpc(method,address){
+ const r=await fetch("https://studio.genlayer.com/api",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params:[address]}),signal:AbortSignal.timeout(13000)});
+ if(!r.ok)throw Error("HTTP "+r.status);
+ const j=await r.json();
+ if(j.error)throw Error(String(j.error.message||"RPC error").slice(0,150));
+ return j.result;
+}
+async function verifyDeployed(key){
+ const contract=DEPLOYED_CONTRACTS[key],status=el("contract-status"),detail=el("contract-detail");
+ status.textContent="Checking deployed contract code and method schema…";detail.replaceChildren();
+ try{
+  const [code,schema]=await Promise.all([contractRpc("gen_getContractCode",contract.address),contractRpc("gen_getContractSchema",contract.address)]);
+  if(typeof code!=="string"||!code||!schema?.methods||!schema.methods[contract.readMethod]?.readonly)throw Error("Deployed code or read method could not be confirmed.");
+  const bytes=Uint8Array.from(atob(code),x=>x.charCodeAt(0));
+  const hex=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),x=>x.toString(16).padStart(2,"0")).join("");
+  const result={network:"GenLayer Studionet",contract:contract.label,address:contract.address,sourceCodeSha256:hex,sourceBytes:bytes.length,readMethod:contract.readMethod,readMethodExists:true,methodIsReadOnly:true,availableMethods:Object.entries(schema.methods).map(([name,meta])=>({name,readonly:!!meta.readonly})),observedAt:new Date().toISOString(),caveat:"Deployed code/schema observed, not newly deployed by Verdict Ledger; no consensus receipt, execution outcome or association with an entered transaction proven."};
+  const line=document.createElement("pre");line.textContent=JSON.stringify(result,null,2);detail.append(line);
+  const a=document.createElement("a");a.target="_blank";a.rel="noopener noreferrer";a.href="https://explorer-studio.genlayer.com/address/"+contract.address;a.textContent="Open contract in GenLayer explorer";detail.append(a);
+  const button=document.createElement("button");button.textContent="Export contract provenance JSON";button.addEventListener("click",()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(result,null,2)],{type:"application/json"}));const a=document.createElement("a");a.href=url;a.download="verdict-"+key+"-contract-provenance.json";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);});detail.append(button);
+  status.textContent=contract.label+" live contract code and public read-only schema verified. No write transaction.";
+ }catch(e){status.textContent="Verification failed: "+String(e.message||e);}
+}
+el("verify-policy").addEventListener("click",()=>verifyDeployed("policy"));
+el("verify-quorum").addEventListener("click",()=>verifyDeployed("quorum"));
