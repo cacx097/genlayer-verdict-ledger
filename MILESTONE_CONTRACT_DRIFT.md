@@ -15,7 +15,7 @@
 ## Independent verification
 - Live HTTP 200 after publishing.
 - Live desktop Chromium E2E PASS: actual PolicyGuard contract code/schema read, two snapshots with unchanged code/schema comparison, real SourceQuorum read, SHA-256 chain verification, local persistence, JSON export.
-- Mobile browser automation still requires an independent terminal PASS; do not call it verified based on desktop alone.
+- Mobile Chromium 390px E2E PASS: actual SourceQuorum contract read, code fingerprint rendered, no page horizontal overflow after a responsive CSS fix. Verified on public GitHub Pages 2026-10-28.
 - Known initial frontend issue: snapshot grouping mistakenly compared display name with select key; fixed to group by exact deployed contract address. The fix is published in `docs/milestone.js`.
 - Source: `docs/milestone.js`, `docs/milestone.html`. All features read-only.
 - Previous approved project state and existing Verdict Ledger main UI remain unchanged.
